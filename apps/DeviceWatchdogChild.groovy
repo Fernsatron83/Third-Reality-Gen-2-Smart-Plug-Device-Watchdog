@@ -1,3 +1,15 @@
+/*
+ * VIBE CODED — USE AT YOUR OWN RISK
+ *
+ * This code was generated with AI assistance ("vibe coding") and is provided
+ * as-is, without warranty of any kind, express or implied. The author accepts
+ * no responsibility for any errors, bugs, data loss, device damage, or any
+ * other problems that may arise from the use of this code.
+ *
+ * By importing or using this code you agree that you do so entirely at your
+ * own risk.
+ */
+
 definition(
     name: "Device Watchdog Child",
     namespace: "local",
