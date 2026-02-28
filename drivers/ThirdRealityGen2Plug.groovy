@@ -1,7 +1,7 @@
 import hubitat.zigbee.zcl.DataType
 
 metadata {
-    definition(name: "Third Reality Gen2 Plug - Production", namespace: "local", author: "Marc") {
+    definition(name: "Third Reality Gen2 Plug (Custom Driver)", namespace: "local", author: "Marc") {
         capability "Actuator"
         capability "Sensor"
         capability "Switch"
