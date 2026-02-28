@@ -104,6 +104,12 @@ def mainPage() {
                 title: "Audio notification devices",
                 required: false, multiple: true
         }
+        section("Start-up behavior (when device comes back online)") {
+            input "startUpOnOff", "enum",
+                title: "Command to send when device comes back ONLINE",
+                required: true, defaultValue: "on",
+                options: ["on": "Turn ON", "off": "Turn OFF", "none": "Do nothing"]
+        }
         section("Optional: keep switch ON") {
             input "enableAutoRestoreOn", "bool",
                 title: "If device is online but switch is off, keep sending ON",
@@ -241,10 +247,21 @@ private void handleWentOffline() {
 }
 private void handleCameOnline() {
     state.lastOfflineNotifiedAt = null
+    applyStartUpOnOff()
     if (!(settings.notifyOnBackOnline as Boolean)) return
     if (!shouldSendOnlineNow()) return
     notifyEvent("online")
     state.lastOnlineNotifiedAt = now()
+}
+private void applyStartUpOnOff() {
+    String cmd = (settings.startUpOnOff as String) ?: "none"
+    if (cmd == "on") {
+        try { targetDevice.on() } catch (e) { log.warn "${app.label}: StartUpOnOff on() failed: ${e}" }
+        if (logEnable) log.info "${app.label}: StartUpOnOff sent on() to ${targetDevice.displayName}"
+    } else if (cmd == "off") {
+        try { targetDevice.off() } catch (e) { log.warn "${app.label}: StartUpOnOff off() failed: ${e}" }
+        if (logEnable) log.info "${app.label}: StartUpOnOff sent off() to ${targetDevice.displayName}"
+    }
 }
 private Boolean shouldSendOnlineNow() {
     Integer cooldown = safeInt(onlineNotifyCooldownSeconds, 120)
