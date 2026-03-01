@@ -102,7 +102,6 @@ Child app   — one per monitored plug
 
 | Area | Item |
 |---|---|
-| Driver | Add `StartUpOnOff` (cluster 0x0006, attr 0x4003) preference to set plug default-on behavior after power outage |
 | App | Finalize parent/child structure and child app registration |
 | App | Fix subscription de-duplication to prevent repeated online-recovery notifications |
 | App | Implement switch-off monitoring with optional auto-on retry |

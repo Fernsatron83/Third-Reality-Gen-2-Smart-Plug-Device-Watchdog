@@ -30,6 +30,10 @@ metadata {
 
         input name: "enableDriverPolling", type: "bool", title: "Enable driver-scheduled polling (normally OFF; app should own polling)", defaultValue: false
         input name: "driverPollSeconds", type: "number", title: "Driver poll interval (seconds)", defaultValue: 60
+
+        input name: "startUpOnOff", type: "enum", title: "Power-on behavior after power outage (applied on Configure)",
+              options: ["on": "Turn ON", "off": "Turn OFF", "previous": "Restore previous state", "none": "Do not set"],
+              defaultValue: "none"
     }
 }
 
@@ -290,10 +294,30 @@ def postRefreshHousekeeping() {
     }
 }
 
+private List<String> startUpOnOffCmds() {
+    String pref = (settings.startUpOnOff as String) ?: "none"
+    Integer val
+    switch (pref) {
+        case "on":       val = 0x01; break
+        case "off":      val = 0x00; break
+        case "previous": val = 0xFF; break
+        default:         return []
+    }
+    try {
+        List<String> cmds = zigbee.writeAttribute(0x0006, 0x4003, DataType.ENUM8, val)
+        if (logEnable) log.debug "${device.displayName} StartUpOnOff set to ${pref} (0x${Integer.toHexString(val).toUpperCase()})"
+        return cmds
+    } catch (e) {
+        log.warn "${device.displayName} StartUpOnOff write failed: ${e}"
+        return []
+    }
+}
+
 def configure() {
     if (txtEnable) log.info "${device.displayName} configure()"
     List<String> cmds = []
     cmds += zigbee.onOffConfig()
+    cmds += startUpOnOffCmds()
 
     if (settings.enableReportingConfig) {
         try { cmds += zigbee.configureReporting(0x0B04, 0x050B, DataType.INT16,  5, 300, 1) } catch (e) { if (logEnable) log.debug "Reporting config power failed: ${e}" }
