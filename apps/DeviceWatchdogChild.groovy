@@ -405,9 +405,11 @@ private String renderTemplate(String template) {
     String deviceName = getDeviceNameForMessages()
     String nowStr = new Date().format("yyyy-MM-dd HH:mm:ss", location.timeZone)
     String out = template ?: ""
+    String lastSeenVal = (targetDevice?.currentValue("lastSeen") as String) ?: "unknown"
     out = out.replace("{device}", deviceName)
     out = out.replace("{offlineAfter}", "${safeInt(offlineAfterMinutes, 5)}")
     out = out.replace("{now}", nowStr)
+    out = out.replace("{lastSeen}", lastSeenVal)
     return out
 }
 private String getDeviceNameForMessages() {
