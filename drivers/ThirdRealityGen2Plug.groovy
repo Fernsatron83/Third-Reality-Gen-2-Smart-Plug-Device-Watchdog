@@ -2,7 +2,7 @@ import hubitat.zigbee.zcl.DataType
 
 metadata {
     definition(name: "Third Reality Gen2 Plug (Custom Driver)", namespace: "local", author: "Marc",
-               importUrl: "https://raw.githubusercontent.com/Fernsatron83/Third-Reality-Gen-2-Smart-Plug-Device-Watchdog/claude/hubitat-smart-plug-driver-KajZ7/drivers/ThirdRealityGen2Plug.groovy") {
+               importUrl: "https://raw.githubusercontent.com/Fernsatron83/Third-Reality-Gen-2-Smart-Plug-Device-Watchdog/claude/influxdb-device-logging-ymZfM/drivers/ThirdRealityGen2Plug.groovy") {
         capability "Actuator"
         capability "Sensor"
         capability "Switch"
