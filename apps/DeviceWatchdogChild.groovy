@@ -8,7 +8,7 @@ definition(
     singleInstance: false,
     iconUrl: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience.png",
     iconX2Url: "https://s3.amazonaws.com/smartapp-icons/Convenience/Cat-Convenience@2x.png",
-    importUrl: "https://raw.githubusercontent.com/Fernsatron83/Third-Reality-Gen-2-Smart-Plug-Device-Watchdog/claude/hubitat-smart-plug-driver-KajZ7/apps/DeviceWatchdogChild.groovy"
+    importUrl: "https://raw.githubusercontent.com/Fernsatron83/Third-Reality-Gen-2-Smart-Plug-Device-Watchdog/claude/influxdb-device-logging-ymZfM/apps/DeviceWatchdogChild.groovy"
 )
 preferences {
     page(name: "mainPage")
@@ -149,6 +149,12 @@ def initialize() {
     if (targetDevice) {
         subscribe(targetDevice, "switch", switchHandler)
         subscribe(targetDevice, "lastSeen", lastSeenHandler)
+        subscribe(targetDevice, "power", deviceDataHandler)
+        subscribe(targetDevice, "voltage", deviceDataHandler)
+        subscribe(targetDevice, "amperage", deviceDataHandler)
+        subscribe(targetDevice, "frequency", deviceDataHandler)
+        subscribe(targetDevice, "powerFactor", deviceDataHandler)
+        subscribe(targetDevice, "energy", deviceDataHandler)
     }
     scheduleHealthChecks()
     runIn(2, "healthCheckTick")
@@ -176,6 +182,7 @@ def healthCheckTick() {
     if (s > 3600) s = 3600
     try {
         evaluateAll("schedule")
+        writeInfluxSnapshot()
     } finally {
         runIn(s, "healthCheckTick")
     }
@@ -184,7 +191,12 @@ def lastSeenHandler(evt) {
     evaluateAll("lastSeen")
 }
 def switchHandler(evt) {
+    writeInfluxField("switch_state", evt.value == "on" ? "1i" : "0i")
     evaluateAll("switch")
+}
+def deviceDataHandler(evt) {
+    String field = influxFieldName(evt.name)
+    writeInfluxField(field, evt.value)
 }
 /* ==========================
    Core logic
@@ -243,10 +255,12 @@ private Long parseLastSeenToMillis(String s) {
     }
 }
 private void handleWentOffline() {
+    writeInfluxField("online", "0i")
     notifyEvent("offline")
     state.lastOfflineNotifiedAt = now()
 }
 private void handleCameOnline() {
+    writeInfluxField("online", "1i")
     state.lastOfflineNotifiedAt = null
     applyStartUpOnOff()
     if (!(settings.notifyOnBackOnline as Boolean)) return
@@ -415,6 +429,89 @@ private String getDeviceNameForMessages() {
     if (friendly?.trim()) return friendly.trim()
     return targetDevice?.displayName ?: "Device"
 }
+/* ==========================
+   InfluxDB logging
+   ========================== */
+private void writeInfluxField(String fieldName, value) {
+    if (!parent.isInfluxEnabled(app.id)) return
+    Map config = parent.getInfluxConfig()
+    if (!config) return
+    String device = escapeInfluxTag(targetDevice.displayName)
+    String valStr = value?.toString()
+    if (!valStr) return
+    // Integer fields already have 'i' suffix; numeric fields are bare decimals
+    String line = "device_watchdog,device=${device} ${fieldName}=${valStr}"
+    postToInflux(config, line)
+    if (logEnable) log.debug "${app.label}: InfluxDB write: ${line}"
+}
+private void writeInfluxSnapshot() {
+    if (!parent.isInfluxEnabled(app.id)) return
+    Map config = parent.getInfluxConfig()
+    if (!config) return
+    String device = escapeInfluxTag(targetDevice.displayName)
+    List<String> fields = []
+    appendNumericField(fields, "power", targetDevice.currentValue("power"))
+    appendNumericField(fields, "voltage", targetDevice.currentValue("voltage"))
+    appendNumericField(fields, "amperage", targetDevice.currentValue("amperage"))
+    appendNumericField(fields, "frequency", targetDevice.currentValue("frequency"))
+    appendNumericField(fields, "power_factor", targetDevice.currentValue("powerFactor"))
+    appendNumericField(fields, "energy", targetDevice.currentValue("energy"))
+    String sw = targetDevice.currentValue("switch") as String
+    if (sw != null) {
+        int v = (sw == "on") ? 1 : 0
+        fields << "switch_state=${v}i"
+    }
+    if (state.isOffline != null) {
+        int v = (state.isOffline as Boolean) ? 0 : 1
+        fields << "online=${v}i"
+    }
+    if (!fields) return
+    String line = "device_watchdog,device=${device} ${fields.join(',')}"
+    postToInflux(config, line)
+    if (logEnable) log.debug "${app.label}: InfluxDB snapshot: ${line}"
+}
+private void appendNumericField(List<String> fields, String name, value) {
+    if (value == null) return
+    try {
+        BigDecimal v = value as BigDecimal
+        fields << "${name}=${v}"
+    } catch (e) { }
+}
+private void postToInflux(Map config, String lineData) {
+    String url = config.url.replaceAll('/+$', '')
+    def params = [
+        uri: "${url}/api/v2/write?org=${urlEncode(config.org)}&bucket=${urlEncode(config.bucket)}&precision=ms",
+        headers: [
+            "Authorization": "Token ${config.token}",
+            "Content-Type": "text/plain; charset=utf-8"
+        ],
+        body: "${lineData} ${now()}"
+    ]
+    try {
+        asynchttpPost("influxWriteHandler", params)
+    } catch (e) {
+        log.warn "${app.label}: InfluxDB POST failed: ${e.message}"
+    }
+}
+def influxWriteHandler(response, data) {
+    if (response.status != 204 && response.status != 200) {
+        log.warn "${app.label}: InfluxDB write returned ${response.status}: ${response.errorMessage ?: ''}"
+    }
+}
+private String influxFieldName(String eventName) {
+    if (eventName == "powerFactor") return "power_factor"
+    return eventName
+}
+private String escapeInfluxTag(String s) {
+    if (!s) return "unknown"
+    return s.replace(' ', '\\ ').replace(',', '\\,').replace('=', '\\=')
+}
+private String urlEncode(String s) {
+    return java.net.URLEncoder.encode(s ?: "", "UTF-8")
+}
+/* ==========================
+   Utilities
+   ========================== */
 private Integer safeInt(val, Integer defVal) {
     try { return (val == null) ? defVal : (val as Integer) } catch (e) { return defVal }
 }
