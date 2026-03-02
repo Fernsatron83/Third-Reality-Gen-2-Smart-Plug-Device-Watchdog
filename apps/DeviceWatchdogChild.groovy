@@ -267,7 +267,7 @@ private void applyStartUpOnOff() {
 private Boolean shouldSendOnlineNow() {
     Integer cooldown = safeInt(onlineNotifyCooldownSeconds, 120)
     if (cooldown < 0) cooldown = 0
-    Long last = (state.lastOnlineNotifiedAt instanceof Long) ? (state.lastOnlineNotifiedAt as Long) : null
+    Long last = (state.lastOnlineNotifiedAt != null) ? (state.lastOnlineNotifiedAt as Long) : null
     if (last == null) return true
     return (now() - last) > (cooldown * 1000L)
 }
@@ -275,7 +275,7 @@ private void maybeRepeatOfflineNotification() {
     Integer repeatMin = safeInt(offlineNotifyRepeatMinutes, 15)
     if (repeatMin < 1) repeatMin = 1
     Long repeatMs = repeatMin * 60_000L
-    Long last = (state.lastOfflineNotifiedAt instanceof Long) ? (state.lastOfflineNotifiedAt as Long) : null
+    Long last = (state.lastOfflineNotifiedAt != null) ? (state.lastOfflineNotifiedAt as Long) : null
     if (last == null) {
         state.lastOfflineNotifiedAt = now()
         return
@@ -332,7 +332,7 @@ private void maybeRepeatOffNotification() {
     Integer repeatMin = safeInt(offNotifyRepeatMinutes, 5)
     if (repeatMin < 1) repeatMin = 1
     Long repeatMs = repeatMin * 60_000L
-    Long last = (state.lastOffNotifiedAt instanceof Long) ? (state.lastOffNotifiedAt as Long) : null
+    Long last = (state.lastOffNotifiedAt != null) ? (state.lastOffNotifiedAt as Long) : null
     if (last == null) {
         state.lastOffNotifiedAt = now()
         return
@@ -405,11 +405,9 @@ private String renderTemplate(String template) {
     String deviceName = getDeviceNameForMessages()
     String nowStr = new Date().format("yyyy-MM-dd HH:mm:ss", location.timeZone)
     String out = template ?: ""
-    String lastSeenVal = (targetDevice?.currentValue("lastSeen") as String) ?: "unknown"
     out = out.replace("{device}", deviceName)
     out = out.replace("{offlineAfter}", "${safeInt(offlineAfterMinutes, 5)}")
     out = out.replace("{now}", nowStr)
-    out = out.replace("{lastSeen}", lastSeenVal)
     return out
 }
 private String getDeviceNameForMessages() {
