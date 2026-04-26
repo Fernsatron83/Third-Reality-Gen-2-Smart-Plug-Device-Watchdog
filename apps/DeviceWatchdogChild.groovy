@@ -35,7 +35,7 @@ def mainPage() {
         }
         section("Health check schedule") {
             input "checkIntervalSeconds", "number",
-                title: "Health check interval (seconds)",
+                title: "Health check interval (seconds, minimum 60)",
                 required: true, defaultValue: 60
         }
         section("Offline detection (no lastSeen updates)") {
@@ -172,20 +172,15 @@ private void maybeAutoLabel() {
    ========================== */
 private void scheduleHealthChecks() {
     Integer s = safeInt(checkIntervalSeconds, 60)
-    if (s < 15) s = 15
+    if (s < 60) s = 60
     if (s > 3600) s = 3600
-    runIn(s, "healthCheckTick")
+    Integer mins = Math.max(1, Math.round(s / 60.0) as Integer)
+    unschedule("healthCheckTick")
+    schedule("0 0/${mins} * ? * * *", "healthCheckTick")
 }
 def healthCheckTick() {
-    Integer s = safeInt(checkIntervalSeconds, 60)
-    if (s < 15) s = 15
-    if (s > 3600) s = 3600
-    try {
-        evaluateAll("schedule")
-        writeInfluxSnapshot()
-    } finally {
-        runIn(s, "healthCheckTick")
-    }
+    evaluateAll("schedule")
+    writeInfluxSnapshot()
 }
 def lastSeenHandler(evt) {
     evaluateAll("lastSeen")
