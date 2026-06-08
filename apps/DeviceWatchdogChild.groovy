@@ -105,6 +105,24 @@ def mainPage() {
                 title: "Audio notification devices",
                 required: false, multiple: true
         }
+        section("Quiet hours (silence sound at night)") {
+            input "quietHoursEnabled", "bool",
+                title: "Enable quiet hours",
+                required: true, defaultValue: false, submitOnChange: true
+            if (settings.quietHoursEnabled) {
+                input "quietHoursStart", "time",
+                    title: "Quiet hours start",
+                    required: true
+                input "quietHoursEnd", "time",
+                    title: "Quiet hours end",
+                    required: true
+                input "quietHoursAffectSpeech", "bool",
+                    title: "Also silence speech (TTS) during quiet hours",
+                    required: true, defaultValue: true
+                paragraph "During quiet hours, audio notifications are silenced. " +
+                    "Push notifications are always delivered so you never miss an alert."
+            }
+        }
         section("Start-up behavior (when device comes back online)") {
             input "startUpOnOff", "enum",
                 title: "Command to send when device comes back ONLINE",
@@ -354,27 +372,33 @@ private void maybeRepeatOffNotification() {
         state.lastOffNotifiedAt = now()
     }
 }
-/* -------- Restore loop -------- */
+/* -------- Restore loop --------
+   The loop is (re)armed idempotently. runIn overwrites any pending
+   restoreTick by method name, so re-arming from both the switch event
+   and the periodic health check cannot pile up duplicate jobs. This
+   also lets the loop self-heal after a hub reboot, which wipes the
+   pending runIn job while state persists. */
 private void maybeStartRestoreLoop() {
-    if (!(settings.enableAutoRestoreOn as Boolean)) return
-    if (state.isOffline == true) return
+    if (!(settings.enableAutoRestoreOn as Boolean)) { stopRestoreLoop(); return }
+    if (state.isOffline == true) { stopRestoreLoop(); return }
     String sw = targetDevice.currentValue("switch") as String
     if (sw == "on") { stopRestoreLoop(); return }
-    if (state.restoreJobActive != true) {
-        state.restoreJobActive = true
-        restoreTick()
-    }
+    armRestoreTick()
+}
+private void armRestoreTick() {
+    state.restoreJobActive = true
+    Integer s = safeInt(restoreOnRepeatSeconds, 60)
+    if (s < 15) s = 15
+    if (s > 3600) s = 3600
+    runIn(s, "restoreTick")
 }
 def restoreTick() {
     if (!(settings.enableAutoRestoreOn as Boolean)) { stopRestoreLoop(); return }
     if (state.isOffline == true) { stopRestoreLoop(); return }
     String sw = targetDevice.currentValue("switch") as String
     if (sw == "on") { stopRestoreLoop(); return }
-    try { targetDevice.on() } catch (e) { }
-    Integer s = safeInt(restoreOnRepeatSeconds, 60)
-    if (s < 15) s = 15
-    if (s > 3600) s = 3600
-    runIn(s, "restoreTick")
+    try { targetDevice.on() } catch (e) { log.warn "${app.label}: restore on() failed: ${e}" }
+    armRestoreTick()
 }
 private void stopRestoreLoop() {
     if (state.restoreJobActive == true) {
@@ -400,17 +424,49 @@ private String getTemplate(String type) {
     return "{device} watchdog event"
 }
 private void sendToEndpoints(String msg) {
+    Boolean quiet = inQuietHours()
+
+    // Push is always delivered, even during quiet hours.
     notificationDevices?.each { dev ->
         try { dev.deviceNotification(msg) } catch (e) { log.warn "${app.label}: Push failed (${dev?.displayName}): ${e}" }
     }
-    speechDevices?.each { dev ->
-        try { dev.speak(msg) } catch (e) { log.warn "${app.label}: Speech failed (${dev?.displayName}): ${e}" }
+
+    Boolean silenceSpeech = quiet && (settings.quietHoursAffectSpeech as Boolean)
+    if (!silenceSpeech) {
+        speechDevices?.each { dev ->
+            try { dev.speak(msg) } catch (e) { log.warn "${app.label}: Speech failed (${dev?.displayName}): ${e}" }
+        }
     }
-    audioDevices?.each { dev ->
-        try { dev.playText(msg) } catch (e) { log.warn "${app.label}: Audio failed (${dev?.displayName}): ${e}" }
+
+    if (!quiet) {
+        audioDevices?.each { dev ->
+            try { dev.playText(msg) } catch (e) { log.warn "${app.label}: Audio failed (${dev?.displayName}): ${e}" }
+        }
     }
+
+    if (quiet && logEnable) {
+        log.debug "${app.label}: Quiet hours active - audio${silenceSpeech ? '/speech' : ''} suppressed for: ${msg}"
+    }
+
     if (!notificationDevices && !speechDevices && !audioDevices) {
         log.warn "${app.label}: No notification endpoints configured. Message: ${msg}"
+    }
+}
+private Boolean inQuietHours() {
+    if (!(settings.quietHoursEnabled as Boolean)) return false
+    if (!settings.quietHoursStart || !settings.quietHoursEnd) return false
+    try {
+        Date nowDate = new Date()
+        Date start = timeToday(settings.quietHoursStart, location.timeZone)
+        Date end   = timeToday(settings.quietHoursEnd, location.timeZone)
+        if (start.after(end)) {
+            // Overnight window (e.g. 22:00 to 07:00): quiet if now is past start or before end.
+            return nowDate.after(start) || nowDate.before(end)
+        }
+        return timeOfDayIsBetween(start, end, nowDate, location.timeZone)
+    } catch (e) {
+        log.warn "${app.label}: Quiet hours evaluation failed: ${e}"
+        return false
     }
 }
 private String renderTemplate(String template) {
