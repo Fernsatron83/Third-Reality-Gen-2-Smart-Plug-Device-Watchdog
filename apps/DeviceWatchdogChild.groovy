@@ -187,7 +187,10 @@ def lastSeenHandler(evt) {
 }
 def switchHandler(evt) {
     writeInfluxField("switch_state", evt.value == "on" ? "1i" : "0i")
-    evaluateAll("switch")
+    if (!targetDevice) return
+    if (settings.enableOffMonitoring as Boolean) evaluateOffState("switch")
+    if (state.isOffline == true) stopRestoreLoop()
+    else maybeStartRestoreLoop()
 }
 def deviceDataHandler(evt) {
     String field = influxFieldName(evt.name)
@@ -260,8 +263,8 @@ private void handleCameOnline() {
     applyStartUpOnOff()
     if (!(settings.notifyOnBackOnline as Boolean)) return
     if (!shouldSendOnlineNow()) return
-    notifyEvent("online")
     state.lastOnlineNotifiedAt = now()
+    notifyEvent("online")
 }
 private void applyStartUpOnOff() {
     String cmd = (settings.startUpOnOff as String) ?: "none"
